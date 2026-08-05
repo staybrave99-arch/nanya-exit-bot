@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import os
 import sys
@@ -46,16 +47,20 @@ def main() -> None:
         log.info("RUN_ON_BOOT 已設定，先跑一次。")
         job()
 
+    trigger = CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute, timezone=tz)
     sched = BlockingScheduler(timezone=tz)
     sched.add_job(
         job,
-        CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute, timezone=tz),
+        trigger,
         id="daily_check",
         max_instances=1,
         coalesce=True,          # 機器睡著錯過幾次 → 醒來只補跑一次
         misfire_grace_time=3600,
     )
-    nxt = sched.get_job("daily_check").next_run_time if sched.get_jobs() else None
+    # job.next_run_time 要排程器真的 start() 跑起來後才會有值（APScheduler
+    # 3.11 是這樣），這裡是 start() 之前，所以直接問 trigger 本身算下次時間，
+    # 不要去讀 job 屬性 —— 部署後曾經因為這樣在開機時就 AttributeError 崩潰。
+    nxt = trigger.get_next_fire_time(None, dt.datetime.now(tz))
     log.info("排程已啟動：每週一~五 %s（%s）。狀態檔：%s",
              st.run_at, st.timezone, st.state_path)
     log.info("ntfy：%s/%s", st.ntfy_server, st.ntfy_topic)
