@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+state.json
+state.json.bak
+state.json.tmp
+price_cache.csv
+price_cache.csv.tmp
+.env
+*.egg-info/

@@ -1,0 +1,31 @@
+# Fly.io 設定。app 名稱請改成你自己的（fly launch 會問）。
+app = "nanya-exit-bot"
+primary_region = "nrt"        # 東京，離台灣最近
+
+[build]
+
+[env]
+  TZ_NAME  = "Asia/Taipei"
+  RUN_AT   = "22:00"
+  NTFY_SERVER = "https://ntfy.sh"
+  NTFY_TOPIC  = "Exit2408"
+  STATE_PATH  = "/data/state.json"
+  CACHE_CSV   = "/data/price_cache.csv"
+  SEED_CSV    = "data/seed_history.csv"
+  HTTP_TIMEOUT = "30"
+
+# 狀態必須放在 volume，否則機器一重建「賣到第幾批」就沒了。
+# 先建立：fly volumes create nanya_data --size 1 --region nrt
+[mounts]
+  source      = "nanya_data"
+  destination = "/data"
+
+# 這是 worker，不對外開 port，所以沒有 [[services]]。
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpus = 1
+
+# 排程器必須一直活著才會在 22:00 醒來 —— 不能自動停機。
+[deploy]
+  strategy = "immediate"
