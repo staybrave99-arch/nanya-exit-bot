@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>南亞科收盤價與四層出場價位</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-close:   #2a78d6;  /* slot 1 blue */
+    --series-up:      #eb6834;  /* slot 2 orange */
+    --series-down:    #1baf7a;  /* slot 3 aqua */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-close:   #3987e5;
+      --series-up:      #d95926;
+      --series-down:    #199e70;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-close:   #3987e5;
+    --series-up:      #d95926;
+    --series-down:    #199e70;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .viz-root { background: var(--page); padding: 24px; min-height: 100vh; }
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px 16px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  h1 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin: 0; }
+  .subtitle { font-size: 12px; color: var(--text-muted); margin: 2px 0 12px; }
+  .toggle-btn {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .toggle-btn:hover { background: var(--gridline); }
+
+  .chart-wrap { position: relative; width: 100%; overflow-x: auto; }
+  svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+  .axis-label { font-size: 11px; fill: var(--text-muted); }
+  .grid-line { stroke: var(--gridline); stroke-width: 1; }
+  .ref-line { stroke-width: 1.5; }
+  .ref-label { font-size: 12px; }
+  .ref-price { font-size: 13px; font-weight: 600; }
+  .close-line { fill: none; stroke: var(--series-close); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end-dot-ring { fill: var(--surface-1); }
+  .end-dot { fill: var(--series-close); }
+  .end-label-value { font-size: 15px; font-weight: 700; fill: var(--text-primary); }
+
+  .crosshair { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
+  .hover-dot { fill: var(--series-close); stroke: var(--surface-1); stroke-width: 2; opacity: 0; pointer-events: none; }
+  .hit-layer { fill: transparent; cursor: crosshair; }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    opacity: 0;
+    transition: opacity 0.08s ease;
+    white-space: nowrap;
+    z-index: 5;
+    color: var(--text-secondary);
+  }
+  .tooltip .tt-date { color: var(--text-muted); margin-bottom: 4px; }
+  .tooltip .tt-row { display: flex; align-items: center; gap: 6px; }
+  .tooltip .tt-key { width: 10px; height: 2px; background: var(--series-close); display: inline-block; }
+  .tooltip .tt-val { color: var(--text-primary); font-weight: 700; margin-left: auto; padding-left: 12px; }
+
+  .legend { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--gridline); }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .legend-swatch { width: 14px; height: 2px; border-radius: 1px; }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  table.data-table caption { text-align: left; font-size: 12px; color: var(--text-muted); padding-bottom: 8px; }
+  table.data-table th, table.data-table td {
+    text-align: right;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--gridline);
+    color: var(--text-secondary);
+  }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; color: var(--text-primary); }
+  table.data-table th { color: var(--text-muted); font-weight: 500; }
+  .table-scroll { max-height: 480px; overflow-y: auto; }
+  .hidden { display: none !important; }
+  footer { max-width: 1000px; margin: 12px auto 0; font-size: 11px; color: var(--text-muted); text-align: right; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h1>南亞科（2408）收盤價（近 60 個交易日）與四層出場價位</h1>
+        <div class="subtitle">資料來源：data/seed_history.csv・出場價位取自 plan.json 預設方案</div>
+      </div>
+      <button class="toggle-btn" id="toggleView">切換表格檢視</button>
+    </div>
+
+    <div class="chart-wrap" id="chartWrap">
+      <svg id="chart" viewBox="0 0 920 560" role="img" aria-label="南亞科收盤價折線圖，附四層出場參考價位"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <div class="table-scroll hidden" id="tableView"></div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--series-close)"></span>收盤價</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--series-up)"></span>往上賣：限價階梯（引擎 1）</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--series-down)"></span>往下出：移動停利與地板（引擎 3・4）</div>
+    </div>
+  </div>
+  <footer>nanya-exit-bot · <a href="https://github.com/staybrave99-arch/nanya-exit-bot">GitHub</a></footer>
+</div>
+
+<script>
+(function () {
+  var data = [
+    ["2026-05-12",321.00],["2026-05-13",321.00],["2026-05-14",341.00],["2026-05-15",311.50],
+    ["2026-05-18",305.00],["2026-05-19",274.50],["2026-05-20",275.00],["2026-05-21",293.00],
+    ["2026-05-22",310.50],["2026-05-25",296.00],["2026-05-26",303.50],["2026-05-27",312.00],
+    ["2026-05-28",324.00],["2026-05-29",347.00],["2026-06-01",381.50],["2026-06-02",419.50],
+    ["2026-06-03",401.50],["2026-06-04",395.00],["2026-06-05",360.00],["2026-06-08",339.50],
+    ["2026-06-09",363.00],["2026-06-10",333.00],["2026-06-11",340.00],["2026-06-12",374.00],
+    ["2026-06-15",395.50],["2026-06-16",425.00],["2026-06-17",437.00],["2026-06-18",459.50],
+    ["2026-06-22",505.00],["2026-06-23",454.50],["2026-06-24",443.50],["2026-06-25",477.00],
+    ["2026-06-26",449.00],["2026-06-29",453.00],["2026-06-30",452.50],["2026-07-01",421.00],
+    ["2026-07-02",407.00],["2026-07-03",409.50],["2026-07-06",420.50],["2026-07-07",403.00],
+    ["2026-07-08",396.00],["2026-07-09",435.50],["2026-07-13",423.00],["2026-07-14",448.00],
+    ["2026-07-15",481.00],["2026-07-16",439.00],["2026-07-17",395.50],["2026-07-20",381.00],
+    ["2026-07-21",405.00],["2026-07-22",445.50],["2026-07-23",426.00],["2026-07-24",401.00],
+    ["2026-07-27",436.00],["2026-07-28",392.50],["2026-07-29",353.50],["2026-07-30",328.00],
+    ["2026-07-31",360.50],["2026-08-03",396.50],["2026-08-04",436.00],["2026-08-05",445.00]
+  ];
+
+  var upLines = [
+    {price:585, label:"券商目標價中段", id:"R5"},
+    {price:550, label:"券商目標價下緣", id:"R4"},
+    {price:520, label:"站上歷史高 505", id:"R3"},
+    {price:495, label:"7/15 波段高 489.5", id:"R2"},
+    {price:470, label:"8/5 高點 470.5", id:"R1"}
+  ];
+  var downLines = [
+    {price:406, label:"快停利 2.0 ATR"},
+    {price:368, label:"慢停利 3.0 ATR"},
+    {price:322, label:"硬地板 7/30 低點"}
+  ];
+
+  var svgNS = "http://www.w3.org/2000/svg";
+  var svg = document.getElementById("chart");
+  var W = 920, H = 560;
+  var padL = 60, padR = 70, padT = 16, padB = 34;
+  var plotW = W - padL - padR, plotH = H - padT - padB;
+
+  var yMin = 290, yMax = 610;
+  function yScale(v) { return padT + plotH * (1 - (v - yMin) / (yMax - yMin)); }
+  function xScale(i) { return padL + (plotW * i) / (data.length - 1); }
+
+  function el(tag, attrs) {
+    var e = document.createElementNS(svgNS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // gridlines + y ticks
+  var yTicks = [300, 350, 400, 450, 500, 550, 600];
+  yTicks.forEach(function (t) {
+    var y = yScale(t);
+    svg.appendChild(el("line", { class: "grid-line", x1: padL, x2: W - padR, y1: y, y2: y }));
+    var lbl = el("text", { class: "axis-label", x: W - padR + 10, y: y + 4, "text-anchor": "start" });
+    lbl.textContent = t;
+    svg.appendChild(lbl);
+  });
+
+  // x ticks (sparse, mirroring the reference image)
+  var xTickDates = ["2026-05-12", "2026-06-01", "2026-06-23", "2026-07-15", "2026-08-05"];
+  xTickDates.forEach(function (d) {
+    var idx = data.findIndex(function (row) { return row[0] === d; });
+    if (idx < 0) return;
+    var x = xScale(idx);
+    var lbl = el("text", { class: "axis-label", x: x, y: H - padB + 20, "text-anchor": "middle" });
+    lbl.textContent = d.slice(5).replace("-", "-");
+    svg.appendChild(lbl);
+  });
+
+  // reference lines (up = orange, down = aqua), with left-aligned price + label
+  function drawRefLine(ref, colorVar) {
+    var y = yScale(ref.price);
+    if (y < padT - 4 || y > H - padB + 4) return;
+    svg.appendChild(el("line", {
+      class: "ref-line", x1: padL, x2: W - padR, y1: y, y2: y,
+      style: "stroke:var(" + colorVar + ")"
+    }));
+    var price = el("text", {
+      class: "ref-price", x: padL - 10, y: y - 6, "text-anchor": "start",
+      style: "fill:var(--text-primary)"
+    });
+    price.textContent = ref.price;
+    svg.appendChild(price);
+    var label = el("text", {
+      class: "ref-label", x: padL + 34, y: y - 6, "text-anchor": "start",
+      style: "fill:var(--text-secondary)"
+    });
+    label.textContent = ref.label;
+    svg.appendChild(label);
+  }
+  upLines.forEach(function (r) { drawRefLine(r, "--series-up"); });
+  downLines.forEach(function (r) { drawRefLine(r, "--series-down"); });
+
+  // close price line
+  var pathD = data.map(function (row, i) {
+    var x = xScale(i), y = yScale(row[1]);
+    return (i === 0 ? "M" : "L") + x + "," + y;
+  }).join(" ");
+  svg.appendChild(el("path", { class: "close-line", d: pathD }));
+
+  // end marker + value label
+  var lastIdx = data.length - 1;
+  var lastX = xScale(lastIdx), lastY = yScale(data[lastIdx][1]);
+  svg.appendChild(el("circle", { class: "end-dot-ring", cx: lastX, cy: lastY, r: 7 }));
+  svg.appendChild(el("circle", { class: "end-dot", cx: lastX, cy: lastY, r: 5 }));
+  var endLbl = el("text", { class: "end-label-value", x: lastX - 10, y: lastY - 14, "text-anchor": "end" });
+  endLbl.textContent = data[lastIdx][1].toFixed(1);
+  svg.appendChild(endLbl);
+
+  // crosshair + hover dot
+  var crosshair = el("line", { class: "crosshair", y1: padT, y2: H - padB });
+  svg.appendChild(crosshair);
+  var hoverDot = el("circle", { class: "hover-dot", r: 5 });
+  svg.appendChild(hoverDot);
+
+  var hit = el("rect", { class: "hit-layer", x: padL, y: padT, width: plotW, height: plotH });
+  svg.appendChild(hit);
+
+  var tooltip = document.getElementById("tooltip");
+  var wrap = document.getElementById("chartWrap");
+
+  function nearestIndex(mouseX) {
+    var rel = (mouseX - padL) / plotW;
+    var idx = Math.round(rel * (data.length - 1));
+    return Math.max(0, Math.min(data.length - 1, idx));
+  }
+
+  function showTooltip(idx, clientX, clientY) {
+    var row = data[idx];
+    var x = xScale(idx), y = yScale(row[1]);
+    crosshair.setAttribute("x1", x);
+    crosshair.setAttribute("x2", x);
+    crosshair.style.opacity = 1;
+    hoverDot.setAttribute("cx", x);
+    hoverDot.setAttribute("cy", y);
+    hoverDot.style.opacity = 1;
+
+    tooltip.innerHTML = "";
+    var dateEl = document.createElement("div");
+    dateEl.className = "tt-date";
+    dateEl.textContent = row[0];
+    tooltip.appendChild(dateEl);
+    var rowEl = document.createElement("div");
+    rowEl.className = "tt-row";
+    var key = document.createElement("span");
+    key.className = "tt-key";
+    var name = document.createTextNode("收盤價");
+    var val = document.createElement("span");
+    val.className = "tt-val";
+    val.textContent = row[1].toFixed(1);
+    rowEl.appendChild(key);
+    rowEl.appendChild(name);
+    rowEl.appendChild(val);
+    tooltip.appendChild(rowEl);
+
+    var wrapRect = wrap.getBoundingClientRect();
+    var left = clientX - wrapRect.left + 14;
+    var top = clientY - wrapRect.top - 40;
+    tooltip.style.left = left + "px";
+    tooltip.style.top = top + "px";
+    tooltip.style.opacity = 1;
+  }
+  function hideTooltip() {
+    crosshair.style.opacity = 0;
+    hoverDot.style.opacity = 0;
+    tooltip.style.opacity = 0;
+  }
+
+  hit.addEventListener("pointermove", function (evt) {
+    var svgRect = svg.getBoundingClientRect();
+    var scaleX = W / svgRect.width;
+    var mouseX = (evt.clientX - svgRect.left) * scaleX;
+    var idx = nearestIndex(mouseX);
+    showTooltip(idx, evt.clientX, evt.clientY);
+  });
+  hit.addEventListener("pointerleave", hideTooltip);
+
+  // table view
+  var tableWrap = document.getElementById("tableView");
+  var table = document.createElement("table");
+  table.className = "data-table";
+  var caption = document.createElement("caption");
+  caption.textContent = "南亞科（2408）近 60 個交易日收盤價";
+  table.appendChild(caption);
+  var thead = document.createElement("thead");
+  var headRow = document.createElement("tr");
+  ["日期", "收盤價"].forEach(function (h) {
+    var th = document.createElement("th");
+    th.textContent = h;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  var tbody = document.createElement("tbody");
+  data.slice().reverse().forEach(function (row) {
+    var tr = document.createElement("tr");
+    var tdDate = document.createElement("td");
+    tdDate.textContent = row[0];
+    var tdVal = document.createElement("td");
+    tdVal.textContent = row[1].toFixed(2);
+    tr.appendChild(tdDate);
+    tr.appendChild(tdVal);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+
+  var chartWrap = document.getElementById("chartWrap");
+  var toggleBtn = document.getElementById("toggleView");
+  var showingTable = false;
+  toggleBtn.addEventListener("click", function () {
+    showingTable = !showingTable;
+    chartWrap.classList.toggle("hidden", showingTable);
+    tableWrap.classList.toggle("hidden", !showingTable);
+    toggleBtn.textContent = showingTable ? "切換圖表檢視" : "切換表格檢視";
+  });
+})();
+</script>
+</body>
+</html>
