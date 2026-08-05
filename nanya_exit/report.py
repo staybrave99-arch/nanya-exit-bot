@@ -10,8 +10,12 @@ def _d(v, fmt="{:.1f}", dash="—"):
     return dash if v is None else fmt.format(v)
 
 
-def notification(res: DayResult, state: State, plan: Plan) -> tuple[str, str, str, int]:
-    """回傳 (title, body, tags, priority)。priority 用 ntfy 的 1~5。"""
+def notification(res: DayResult, state: State, plan: Plan,
+                 chart_url: str = "") -> tuple[str, str, str, int]:
+    """回傳 (title, body, tags, priority)。priority 用 ntfy 的 1~5。
+
+    chart_url 給了的話，本文最後會附一行連結（ntfy 客戶端會自動把網址變成可點）。
+    """
     s = res.snap
     md = s.date[5:].replace("-", "/")
     chg = "" if s.change_pct is None else f"（{s.change_pct:+.2f}%）"
@@ -29,6 +33,8 @@ def notification(res: DayResult, state: State, plan: Plan) -> tuple[str, str, st
             f"平均實現價 {_d(avg)}　共 {state.sold_lots} 張",
             state.data.get("closed_reason") or "",
         ]
+        if chart_url:
+            lines += ["", f"圖表：{chart_url}"]
         return f"{plan.name} {plan.symbol}｜出清完成", "\n".join(x for x in lines if x), "checkered_flag", 4
 
     # 今日成交
@@ -73,6 +79,9 @@ def notification(res: DayResult, state: State, plan: Plan) -> tuple[str, str, st
     for n in res.notes:
         if n.startswith("⚠") and not any(n in l for l in lines):
             lines.append(n)
+
+    if chart_url:
+        lines += ["", f"圖表：{chart_url}"]
 
     triggered = res.triggered
     title = f"{plan.name} {md}" + ("　⚠ 有動作" if triggered else "")

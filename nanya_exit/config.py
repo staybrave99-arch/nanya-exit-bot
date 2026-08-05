@@ -108,8 +108,10 @@ class Settings:
     ntfy_server: str = field(default_factory=lambda: os.getenv("NTFY_SERVER", "https://ntfy.sh"))
     ntfy_topic: str = field(default_factory=lambda: os.getenv("NTFY_TOPIC", "Exit2408"))
     ntfy_token: str = field(default_factory=lambda: os.getenv("NTFY_TOKEN", ""))
+    chart_url: str = field(default_factory=lambda: os.getenv(
+        "CHART_URL", "https://staybrave99-arch.github.io/nanya-exit-bot/"))
     timezone: str = field(default_factory=lambda: os.getenv("TZ_NAME", "Asia/Taipei"))
-    run_at: str = field(default_factory=lambda: os.getenv("RUN_AT", "22:00"))
+    run_at: str = field(default_factory=lambda: os.getenv("RUN_AT", "20:00"))
     http_timeout: int = field(default_factory=lambda: int(os.getenv("HTTP_TIMEOUT", "30")))
 
     def resolved_cache_csv(self) -> str:

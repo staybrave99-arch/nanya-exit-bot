@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from dataclasses import asdict
 from pathlib import Path
@@ -80,6 +81,7 @@ class State:
             "closed": False,
             "closed_reason": None,
             "runs": [],
+            "corrections": [],
         })
 
     @classmethod
@@ -169,6 +171,62 @@ class State:
             if t["status"] == PENDING:
                 t["status"] = CANCELLED
                 t["note"] = f"{t.get('note','')}｜已取消：{reason}".strip("｜")
+
+    def dequeue_next_session(self, tid: str, reason: str) -> dict:
+        """撤掉一筆『收盤已觸發、明日開盤還沒真的執行』的排隊單。
+
+        這個階段 state 裡還沒有任何 Fill 被寫入，撤掉不會留下錯誤的成交
+        歷史，是最安全的介入點。引擎 3 慢停利／引擎 4 循環結束觸發時會把
+        其他還沒成交的批次一併 cancel_remaining_tranches——兩者都只會
+        連著 SLOW 一起發生，撤掉 SLOW 的排隊單時一併復原這些批次。
+        """
+        order = next((o for o in self.data["pending_next_session"]
+                     if o["tranche_id"] == tid), None)
+        if order is None:
+            raise KeyError(f"{tid} 目前沒有排隊中的單")
+        self.data["pending_next_session"] = [
+            o for o in self.data["pending_next_session"] if o["tranche_id"] != tid
+        ]
+        restored = []
+        for t in self.data["tranches"]:
+            if t["status"] == CANCELLED:
+                t["status"] = PENDING
+                t["note"] = re.sub(r"｜?已取消：.*$", "", t["note"]).strip("｜")
+                restored.append(t["id"])
+        self._log_correction("dequeue", tid, reason, order=order, restored=restored)
+        return {"dequeued": order, "restored": restored}
+
+    def unfill(self, tid: str, reason: str) -> dict:
+        """撤銷一筆已經被標記成交、但實際沒有成交的批次。
+
+        給引擎 1（限價階梯）／引擎 2（乖離過熱）用——這兩種是當場認定
+        成交，沒有像排隊單那樣的緩衝期，所以要事後校正：把成交紀錄從
+        fills[] 移掉、張數加回剩餘、批次退回 pending；如果這筆成交剛好
+        讓部位被標記為已出清，一併復原。
+        """
+        t = self.tranche(tid)
+        if t is None:
+            raise KeyError(f"找不到批次 {tid}")
+        if t["status"] != FILLED:
+            raise ValueError(f"批次 {tid} 目前不是已成交狀態，無需撤銷")
+        fill_idx = next((i for i in range(len(self.data["fills"]) - 1, -1, -1)
+                         if self.data["fills"][i]["tranche_id"] == tid), None)
+        if fill_idx is None:
+            raise ValueError(f"找不到批次 {tid} 的成交紀錄，state 可能被手動改過")
+        removed = self.data["fills"].pop(fill_idx)
+        self.data["remaining_lots"] = self.remaining + removed["lots"]
+        t["status"] = PENDING
+        t["fill_price"] = None
+        t["fill_date"] = None
+        if self.data["closed"] and self.remaining > 0:
+            self.data["closed"] = False
+            self.data["closed_reason"] = None
+        self._log_correction("unfill", tid, reason, removed_fill=removed)
+        return {"removed": removed}
+
+    def _log_correction(self, action: str, tid: str, reason: str, **extra) -> None:
+        entry = {"action": action, "tranche_id": tid, "reason": reason, **extra}
+        self.data.setdefault("corrections", []).append(entry)
 
     def mark_processed(self, date: str) -> None:
         self.data["last_processed_date"] = date

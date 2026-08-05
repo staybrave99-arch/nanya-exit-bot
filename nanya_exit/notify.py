@@ -18,10 +18,15 @@ class NotifyError(RuntimeError):
 
 def push(server: str, topic: str, title: str, message: str,
          tags: str = "", priority: int = 3, token: str = "",
-         timeout: int = 30, dry_run: bool = False) -> dict | None:
-    """送一則 ntfy 通知。dry_run=True 只印不送。"""
+         timeout: int = 30, dry_run: bool = False, click: str = "") -> dict | None:
+    """送一則 ntfy 通知。dry_run=True 只印不送。
+
+    click：設了的話，點通知本體（不只是連結文字）就會直接開這個網址。
+    """
     url = f"{server.rstrip('/')}/{topic}"
     headers = {"Priority": str(priority)}
+    if click:
+        headers["Click"] = click
 
     # HTTP header 只吃 latin-1，中文標題必須用 RFC 2047 base64 編碼，
     # 否則 requests 會丟 UnicodeEncodeError。ntfy 看得懂這個格式。

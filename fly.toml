@@ -6,7 +6,7 @@ primary_region = "nrt"        # 東京，離台灣最近
 
 [env]
   TZ_NAME  = "Asia/Taipei"
-  RUN_AT   = "22:00"
+  RUN_AT   = "20:00"
   NTFY_SERVER = "https://ntfy.sh"
   NTFY_TOPIC  = "Exit2408"
   STATE_PATH  = "/data/state.json"
@@ -26,6 +26,6 @@ primary_region = "nrt"        # 東京，離台灣最近
   memory = "256mb"
   cpus = 1
 
-# 排程器必須一直活著才會在 22:00 醒來 —— 不能自動停機。
+# 排程器必須一直活著才會在 20:00 醒來 —— 不能自動停機。
 [deploy]
   strategy = "immediate"

@@ -25,7 +25,7 @@ ENV STATE_PATH=/data/state.json \
     SEED_CSV=data/seed_history.csv \
     NTFY_TOPIC=Exit2408 \
     TZ_NAME=Asia/Taipei \
-    RUN_AT=22:00
+    RUN_AT=20:00
 
 # 沒掛 volume 時也不要直接爆掉
 RUN mkdir -p /data

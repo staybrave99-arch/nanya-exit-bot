@@ -1,6 +1,6 @@
 # 南亞科 2408 分批出場機器人
 
-每個交易日 22:00（台北）自動抓證交所收盤資料、重算指標、判斷該賣哪一批，
+每個交易日 20:00（台北）自動抓證交所收盤資料、重算指標、判斷該賣哪一批，
 把「明天該掛哪些單」推到 ntfy。**有狀態**：賣到第幾批、每批成交價、
 今天觸發但明天才執行的單，全部存在 `state.json`。
 
@@ -126,7 +126,7 @@ fly ssh sftp get /data/state.json ./state.json
 ### 為什麼不用 Fly 內建的 machine schedule
 
 它只支援 `hourly` / `daily` / `weekly`，**不能指定幾點**。收盤巡檢必須在
-22:00 跑，所以用一台常駐 `shared-cpu-1x` + APScheduler。記憶體 256MB 夠用。
+20:00 跑，所以用一台常駐 `shared-cpu-1x` + APScheduler。記憶體 256MB 夠用。
 
 ---
 

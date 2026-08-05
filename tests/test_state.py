@@ -110,3 +110,60 @@ def test_queue_next_session_dedupes(plan):
     st.queue_next_session(o)
     st.queue_next_session(o)
     assert len(st.data["pending_next_session"]) == 1
+
+
+def test_dequeue_removes_pending_order_without_touching_fills(plan):
+    from nanya_exit.models import PendingOrder
+    st = State.new(plan)
+    st.queue_next_session(PendingOrder("FAST", "chandelier_fast", 9, "2026-08-10", "測試"))
+    result = st.dequeue_next_session("FAST", "臨時決定不賣")
+    assert result["restored"] == []
+    assert st.data["pending_next_session"] == []
+    assert st.data["fills"] == []
+    assert st.data["corrections"][0]["action"] == "dequeue"
+
+
+def test_dequeue_unknown_tranche_raises(plan):
+    st = State.new(plan)
+    with pytest.raises(KeyError):
+        st.dequeue_next_session("NOPE", "測試")
+
+
+def test_dequeue_slow_restores_cascaded_cancellations(plan):
+    from nanya_exit.models import PendingOrder
+    st = State.new(plan)
+    # 真實觸發順序（見 engine.py）：先 queue，SLOW 自己那筆 tranche 這時
+    # 仍是 pending，所以隨後的 cancel_remaining_tranches 連它也一併取消。
+    st.queue_next_session(PendingOrder("SLOW", "chandelier_slow", None, "2026-08-10", "跌破慢停利線"))
+    st.cancel_remaining_tranches("慢停利線觸發")
+    result = st.dequeue_next_session("SLOW", "券商回報漲停鎖死，沒真的賣掉")
+    assert set(result["restored"]) == {"R1", "R2", "R3", "R4", "R5", "B25", "B32", "FAST", "SLOW"}
+    for t in st.data["tranches"]:
+        assert t["status"] == "pending"
+        assert "已取消" not in t["note"]
+
+
+def test_unfill_reverses_fill_and_reopens_position(plan):
+    st = State.new(plan)
+    st.fill("SLOW", 60, 400.0, "2026-08-10", "掃尾")
+    assert st.closed
+    result = st.unfill("SLOW", "沒真的成交")
+    assert result["removed"]["lots"] == 60
+    assert not st.closed
+    assert st.data["closed_reason"] is None
+    assert st.remaining == 60
+    assert st.tranche("SLOW")["status"] == "pending"
+    assert st.data["fills"] == []
+    assert st.data["corrections"][0]["action"] == "unfill"
+
+
+def test_unfill_pending_tranche_raises(plan):
+    st = State.new(plan)
+    with pytest.raises(ValueError):
+        st.unfill("R1", "還沒成交，不能撤")
+
+
+def test_unfill_unknown_tranche_raises(plan):
+    st = State.new(plan)
+    with pytest.raises(KeyError):
+        st.unfill("NOPE", "測試")

@@ -5,6 +5,8 @@
   python -m nanya_exit replay         # 從頭重建狀態
   python -m nanya_exit status         # 看目前狀態
   python -m nanya_exit mark-filled R1 --price 471.5 --date 2026-08-07
+  python -m nanya_exit dequeue SLOW --reason "臨時決定不出清"
+  python -m nanya_exit unfill R1 --reason "當天忘了掛單，沒真的成交"
   python -m nanya_exit test-notify
 """
 from __future__ import annotations
@@ -76,7 +78,7 @@ def cmd_run(args) -> int:
     res = process_day(state, bars, plan, index)
     print(console(res, state, plan))
 
-    title, body, tags, priority = notification(res, state, plan)
+    title, body, tags, priority = notification(res, state, plan, st.chart_url)
     pushed, err = False, None
     if args.no_notify:
         log.info("--no-notify：略過推播。")
@@ -85,7 +87,8 @@ def cmd_run(args) -> int:
     else:
         try:
             push(st.ntfy_server, st.ntfy_topic, title, body, tags, priority,
-                 st.ntfy_token, st.http_timeout, dry_run=args.dry_run)
+                 st.ntfy_token, st.http_timeout, dry_run=args.dry_run,
+                 click=st.chart_url)
             pushed = True
             if not args.dry_run:
                 state.data["last_notified_date"] = res.date
@@ -185,6 +188,42 @@ def cmd_mark_filled(args) -> int:
     return 0
 
 
+def cmd_dequeue(args) -> int:
+    """撤掉一筆收盤已觸發、明日開盤還沒真的執行的排隊單（還沒寫進 fills，最安全的介入點）。"""
+    plan = Plan.load(args.plan)
+    st = Settings()
+    state = State.load(st.state_path, plan)
+    try:
+        result = state.dequeue_next_session(args.tranche_id, args.reason)
+    except (KeyError, ValueError) as e:
+        print(e, file=sys.stderr)
+        return 2
+    state.save(st.state_path)
+    msg = f"已撤掉排隊單 {args.tranche_id}"
+    if result["restored"]:
+        msg += f"，並復原被連帶取消的批次：{', '.join(result['restored'])}"
+    print(msg)
+    return 0
+
+
+def cmd_unfill(args) -> int:
+    """撤銷一筆已經被標記成交、但實際沒有成交的批次（人工校正用）。"""
+    plan = Plan.load(args.plan)
+    st = Settings()
+    state = State.load(st.state_path, plan)
+    try:
+        result = state.unfill(args.tranche_id, args.reason)
+    except (KeyError, ValueError) as e:
+        print(e, file=sys.stderr)
+        return 2
+    state.save(st.state_path)
+    removed = result["removed"]
+    print(f"已撤銷 {args.tranche_id} 的成交紀錄："
+         f"{removed['lots']} 張 @ {removed['price']}（{removed['date']}），"
+         f"剩 {state.remaining} 張")
+    return 0
+
+
 def cmd_test_notify(args) -> int:
     st = Settings()
     plan = Plan.load(args.plan)
@@ -234,6 +273,16 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--date", required=True)
     m.add_argument("--lots", type=int)
     m.set_defaults(func=cmd_mark_filled)
+
+    dq = sub.add_parser("dequeue", help="撤掉一筆收盤觸發、明日開盤還沒執行的排隊單")
+    dq.add_argument("tranche_id")
+    dq.add_argument("--reason", required=True, help="為什麼要撤（會寫進 state.json 的稽核紀錄）")
+    dq.set_defaults(func=cmd_dequeue)
+
+    uf = sub.add_parser("unfill", help="撤銷一筆已標記成交、但實際沒有成交的批次")
+    uf.add_argument("tranche_id")
+    uf.add_argument("--reason", required=True, help="為什麼要撤（會寫進 state.json 的稽核紀錄）")
+    uf.set_defaults(func=cmd_unfill)
 
     t = sub.add_parser("test-notify", help="送一則測試推播")
     t.add_argument("--dry-run", action="store_true")
