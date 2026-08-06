@@ -1,11 +1,14 @@
 name: Update chart data
 
-# 每個台股交易日收盤後（排程器 20:00 台北時間跑完之後）重算圖表資料，
+# 排在 Fly.io 排程器（20:00 台北）之前跑，而不是之後：推播訊息裡有
+# 圖表連結，使用者最可能在收到通知的當下點進去看，圖表這時就該是當天
+# 的資料了。MI_INDEX（今日資料來源）收盤後（約 13:30）就緒，19:00 已
+# 留超過 5 小時緩衝，資料不會沒抓到。
 # push 上 main 就會讓 GitHub Pages（從 main:/docs 部署）自動重新發布。
 # 跟 state.json／實際持倉無關，純粹是市場資料 + 指標的靜態快照。
 on:
   schedule:
-    - cron: "0 13 * * 1-5"   # 21:00 Asia/Taipei，週一~五
+    - cron: "0 11 * * 1-5"   # 19:00 Asia/Taipei，週一~五（早於 Fly.io 20:00 排程）
   workflow_dispatch:
 
 permissions:

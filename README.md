@@ -138,8 +138,10 @@ fly ssh sftp get /data/state.json ./state.json
 
 `docs/index.html` 是一頁式的收盤價 + 出場價位圖，發布在 GitHub Pages。資料來自
 `docs/chart-data.json`，由 `.github/workflows/update-chart.yml` 每個交易日
-21:00（台北，晚於排程器的 20:00 巡檢）自動重新產生並 commit——push 到 `main`
-就會讓 Pages（從 `main:/docs` 部署）自動重新發布，不需要另外接部署流程。
+19:00（台北，早於排程器的 20:00 巡檢）自動重新產生並 commit——刻意排在推播
+之前，這樣通知裡附的圖表連結一點開就是當天資料，不用等推播之後再更新一次。
+push 到 `main` 就會讓 Pages（從 `main:/docs` 部署）自動重新發布，不需要另外
+接部署流程。
 
 `chart-data.json` 只讀市場資料算指標，跟 `state.json`／實際持倉無關；本地要
 手動更新一次可以直接跑：
