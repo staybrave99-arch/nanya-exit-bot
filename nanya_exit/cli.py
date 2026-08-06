@@ -258,6 +258,13 @@ def cmd_chart_data(args) -> int:
                            "label": f"慢停利 {plan.slow_k:.1f} ATR"})
     down_lines.append({"price": plan.hard_floor, "label": "硬地板"})
 
+    bias_lines = []
+    for b in plan.bias_steps:
+        price = snap.bias_price(b.threshold)
+        if price is not None:
+            bias_lines.append({"price": round(price, 1),
+                               "label": f"乖離 ≥{b.threshold:+.0%}", "id": b.id})
+
     data = {
         "generated_at": dt.datetime.now(ZoneInfo(st.timezone)).isoformat(timespec="seconds"),
         "symbol": plan.symbol,
@@ -266,6 +273,7 @@ def cmd_chart_data(args) -> int:
         "series": [{"date": b.date, "close": b.close} for b in recent],
         "up_lines": up_lines,
         "down_lines": down_lines,
+        "bias_lines": bias_lines,
     }
 
     out = Path(args.out)

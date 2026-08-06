@@ -76,10 +76,12 @@ def notification(res: DayResult, state: State, plan: Plan,
         else:
             lines.append(f"停利 {s.slow_stop:.1f} 全部（快線已執行）")
 
-    # 乖離觸發價
+    # 乖離觸發價（浮動——每天跟著 MA20 一起變，不是固定價）
     pending_bias = state.pending_tranches("bias")
     if pending_bias and s.ma_fast:
-        bs = "　".join(f"{s.ma_fast * (1 + t['trigger']['threshold']):.0f}" for t in pending_bias)
+        bs = "　".join(
+            f"{t['id']} {s.ma_fast * (1 + t['trigger']['threshold']):.0f}×{_pct(t['lots'], total)}"
+            for t in pending_bias)
         lines.append(f"乖離觸發價 {bs}")
 
     for o in res.queued:

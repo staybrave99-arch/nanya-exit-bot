@@ -18,6 +18,7 @@
     --series-close:   #2a78d6;  /* slot 1 blue */
     --series-up:      #eb6834;  /* slot 2 orange */
     --series-down:    #1baf7a;  /* slot 3 aqua */
+    --series-bias:    #4a3aa7;  /* slot 7 violet */
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) .viz-root {
@@ -33,6 +34,7 @@
       --series-close:   #3987e5;
       --series-up:      #d95926;
       --series-down:    #199e70;
+      --series-bias:    #9085e9;
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -48,6 +50,7 @@
     --series-close:   #3987e5;
     --series-up:      #d95926;
     --series-down:    #199e70;
+    --series-bias:    #9085e9;
   }
 
   * { box-sizing: border-box; }
@@ -166,6 +169,7 @@
     <div class="legend">
       <div class="legend-item"><span class="legend-swatch" style="background:var(--series-close)"></span>收盤價</div>
       <div class="legend-item"><span class="legend-swatch" style="background:var(--series-up)"></span>往上賣：限價階梯（引擎 1）</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--series-bias)"></span>往上賣：乖離過熱（引擎 2，浮動）</div>
       <div class="legend-item"><span class="legend-swatch" style="background:var(--series-down)"></span>往下出：移動停利與地板（引擎 3・4）</div>
     </div>
   </div>
@@ -194,13 +198,14 @@
     var data = payload.series.map(function (row) { return [row.date, row.close]; });
     var upLines = payload.up_lines || [];
     var downLines = payload.down_lines || [];
+    var biasLines = payload.bias_lines || [];
 
     titleEl.textContent = payload.name + "（" + payload.symbol + "）收盤價（近 "
       + data.length + " 個交易日）與四層出場價位";
     subtitleEl.textContent = "資料截至 " + payload.as_of
       + "・產生時間 " + payload.generated_at.replace("T", " ").slice(0, 16);
 
-    buildChart(data, upLines, downLines);
+    buildChart(data, upLines, downLines, biasLines);
   }
 
   var svgNS = "http://www.w3.org/2000/svg";
@@ -220,7 +225,8 @@
     return candidates[candidates.length - 1];
   }
 
-  function buildChart(data, upLines, downLines) {
+  function buildChart(data, upLines, downLines, biasLines) {
+    biasLines = biasLines || [];
     var svg = document.getElementById("chart");
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
@@ -230,7 +236,8 @@
 
     var allPrices = data.map(function (row) { return row[1]; })
       .concat(upLines.map(function (r) { return r.price; }))
-      .concat(downLines.map(function (r) { return r.price; }));
+      .concat(downLines.map(function (r) { return r.price; }))
+      .concat(biasLines.map(function (r) { return r.price; }));
     var dataMin = Math.min.apply(null, allPrices);
     var dataMax = Math.max.apply(null, allPrices);
     var pad = Math.max((dataMax - dataMin) * 0.06, 5);
@@ -260,29 +267,48 @@
       svg.appendChild(xlbl);
     }
 
-    // reference lines (up = orange, down = aqua), with left-aligned price + label
-    function drawRefLine(ref, colorVar) {
-      var ry = yScale(ref.price);
-      if (ry < padT - 4 || ry > H - padB + 4) return;
+    // reference lines：橫線畫在真實價位，文字標籤各自獨立防重疊
+    // （今天的乖離觸發價常常剛好落在階梯附近，價位一近文字就會疊在一起）
+    var refs = []
+      .concat(upLines.map(function (r) { return { price: r.price, label: r.label, colorVar: "--series-up" }; }))
+      .concat(downLines.map(function (r) { return { price: r.price, label: r.label, colorVar: "--series-down" }; }))
+      .concat(biasLines.map(function (r) { return { price: r.price, label: r.label, colorVar: "--series-bias" }; }));
+
+    refs.forEach(function (r) { r.ry = yScale(r.price); r.labelY = r.ry - 6; });
+    refs.sort(function (a, b) { return a.labelY - b.labelY; });
+    var minGap = 15;
+    for (var ri = 1; ri < refs.length; ri++) {
+      if (refs[ri].labelY - refs[ri - 1].labelY < minGap) {
+        refs[ri].labelY = refs[ri - 1].labelY + minGap;
+      }
+    }
+
+    refs.forEach(function (ref) {
+      if (ref.ry < padT - 4 || ref.ry > H - padB + 4) return;
       svg.appendChild(el("line", {
-        class: "ref-line", x1: padL, x2: W - padR, y1: ry, y2: ry,
-        style: "stroke:var(" + colorVar + ")"
+        class: "ref-line", x1: padL, x2: W - padR, y1: ref.ry, y2: ref.ry,
+        style: "stroke:var(" + ref.colorVar + ")"
       }));
+      // 標籤被擠開超過半格時，拉一條細 leader 線指回真正的價位
+      if (Math.abs(ref.labelY - (ref.ry - 6)) > 4) {
+        svg.appendChild(el("line", {
+          x1: padL - 4, x2: padL - 4, y1: ref.ry, y2: ref.labelY + 3,
+          style: "stroke:var(--text-muted);stroke-width:1"
+        }));
+      }
       var price = el("text", {
-        class: "ref-price", x: padL - 10, y: ry - 6, "text-anchor": "start",
+        class: "ref-price", x: padL - 10, y: ref.labelY, "text-anchor": "start",
         style: "fill:var(--text-primary)"
       });
       price.textContent = ref.price;
       svg.appendChild(price);
       var label = el("text", {
-        class: "ref-label", x: padL + 34, y: ry - 6, "text-anchor": "start",
+        class: "ref-label", x: padL + 34, y: ref.labelY, "text-anchor": "start",
         style: "fill:var(--text-secondary)"
       });
       label.textContent = ref.label;
       svg.appendChild(label);
-    }
-    upLines.forEach(function (r) { drawRefLine(r, "--series-up"); });
-    downLines.forEach(function (r) { drawRefLine(r, "--series-down"); });
+    });
 
     // close price line
     var pathD = data.map(function (row, i) {
