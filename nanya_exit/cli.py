@@ -7,6 +7,8 @@
   python -m nanya_exit mark-filled R1 --price 471.5 --date 2026-08-07
   python -m nanya_exit dequeue SLOW --reason "臨時決定不出清"
   python -m nanya_exit unfill R1 --reason "當天忘了掛單，沒真的成交"
+  python -m nanya_exit chart-data --out docs/chart-data.json
+  python -m nanya_exit backtest --paths 200
   python -m nanya_exit test-notify
 """
 from __future__ import annotations
@@ -15,15 +17,19 @@ import argparse
 import datetime as dt
 import json
 import logging
+import math
 import sys
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .backtest import SCENARIOS, compare_strategies
 from .config import Plan, Settings
 from .engine import process_day, replay as do_replay
+from .indicators import snapshot
 from .notify import NotifyError, push
 from .report import console, notification
 from .state import State
+from .strategies import STRATEGIES
 from .twse import refresh
 
 log = logging.getLogger("nanya_exit")
@@ -224,6 +230,137 @@ def cmd_unfill(args) -> int:
     return 0
 
 
+def cmd_chart_data(args) -> int:
+    """把近況（收盤價序列 + 當下算出的出場價位）寫成靜態 JSON，給 docs/index.html 抓。
+
+    跟 state.json／實際持倉完全無關——只讀市場資料算指標，方便給
+    GitHub Actions 排程呼叫，不會動到部位追蹤。
+    """
+    plan = Plan.load(args.plan)
+    st = Settings()
+    today = _today(st, args.date)
+    bars, _ = refresh(plan.symbol, today, st.seed_csv, st.resolved_cache_csv(),
+                      timeout=st.http_timeout, offline=args.offline)
+    if not bars:
+        log.error("完全沒有價格資料，無法產生圖表資料。")
+        return 2
+
+    snap = snapshot(bars, plan, len(bars) - 1)
+    recent = bars[-args.lookback:]
+
+    up_lines = [{"price": r.price, "label": r.note, "id": r.id} for r in plan.ladder]
+    down_lines = []
+    if snap.fast_stop is not None:
+        down_lines.append({"price": round(snap.fast_stop, 1),
+                           "label": f"快停利 {plan.fast_k:.1f} ATR"})
+    if snap.slow_stop is not None:
+        down_lines.append({"price": round(snap.slow_stop, 1),
+                           "label": f"慢停利 {plan.slow_k:.1f} ATR"})
+    down_lines.append({"price": plan.hard_floor, "label": "硬地板"})
+
+    data = {
+        "generated_at": dt.datetime.now(ZoneInfo(st.timezone)).isoformat(timespec="seconds"),
+        "symbol": plan.symbol,
+        "name": plan.name,
+        "as_of": snap.date,
+        "series": [{"date": b.date, "close": b.close} for b in recent],
+        "up_lines": up_lines,
+        "down_lines": down_lines,
+    }
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"已寫入 {out}（{len(recent)} 筆，最新 {recent[-1].date}，"
+         f"快停利 {_fmt(snap.fast_stop)}／慢停利 {_fmt(snap.slow_stop)}）")
+    return 0
+
+
+def _fmt(v: float | None) -> str:
+    return "—" if v is None else f"{v:.1f}"
+
+
+def cmd_backtest(args) -> int:
+    """用 block bootstrap 合成多條路徑，比較候選策略的穩健度（不動 state.json）。
+
+    合成路徑都從「今天實際收盤價」往前接，用近期歷史的振幅/跳空特性
+    重新洗牌組出很多條劇本，同一組劇本讓每個策略都跑過一次——目的是
+    看哪個策略在不同劇本下結果比較穩定，而不是只看單一數字最高。
+
+    預設會把「偏空／中性／偏多」三種方向假設都跑一遍（--scenario 可只跑
+    一種）——不是預測未來會怎麼走，是讓你自己決定要相信哪個情境，同時
+    看得出結論對「未來方向」這個假設有多敏感。
+    """
+    plan = Plan.load(args.plan)
+    st = Settings()
+    today = _today(st, args.date)
+    bars, _ = refresh(plan.symbol, today, st.seed_csv, st.resolved_cache_csv(),
+                      timeout=st.http_timeout, offline=args.offline)
+    if not bars:
+        log.error("完全沒有價格資料，無法回測。")
+        return 2
+
+    names = args.strategies or list(STRATEGIES.keys())
+    unknown = [n for n in names if n not in STRATEGIES]
+    if unknown:
+        print(f"不認識的策略：{', '.join(unknown)}（可用：{', '.join(STRATEGIES)}）",
+             file=sys.stderr)
+        return 2
+    strategies = {name: STRATEGIES[name](plan) for name in names}
+
+    scenario_names = args.scenarios or list(SCENARIOS.keys())
+    unknown_sc = [s for s in scenario_names if s not in SCENARIOS]
+    if unknown_sc:
+        print(f"不認識的情境：{', '.join(unknown_sc)}（可用：{', '.join(SCENARIOS)}）",
+             file=sys.stderr)
+        return 2
+
+    print(f"合成路徑：{args.paths} 條／情境　每條 {args.length} 個交易日"
+         f"（區塊長度 {args.block_size}，種子 {args.seed}）")
+    print(f"錨定收盤價：{bars[-1].close:.1f}（{bars[-1].date}）")
+    print("情境不是預測——是固定的方向假設，用來看結論對「未來怎麼走」有多敏感。\n")
+
+    winners = {}
+    for sc_name in scenario_names:
+        drift = SCENARIOS[sc_name]
+        annualized = (math.exp(drift * 252) - 1) * 100
+        results = compare_strategies(strategies, bars, n_paths=args.paths,
+                                     path_length=args.length, block_size=args.block_size,
+                                     seed=args.seed, target_drift=drift)
+        # 主排序依變異係數（CV）由小到大——優先看「結果穩不穩」，不是誰的均值最高
+        ordered = sorted(results.items(),
+                         key=lambda kv: (kv[1]["capture_ratio"]["cv"] is None,
+                                         kv[1]["capture_ratio"]["cv"] or 0))
+        winners[sc_name] = ordered[0][0]
+
+        print(f"── {sc_name}（日均漂移 {drift:+.4f}，約年化 {annualized:+.0f}%）──")
+        header = f"{'策略':<20}{'出清率':>8}{'capture均':>10}{'capture CV':>12}{'vs持有均':>10}"
+        print(header)
+        print("─" * len(header))
+        for name, r in ordered:
+            cr, vb = r["capture_ratio"], r["vs_buy_hold"]
+            cr_mean = "—" if cr["mean"] is None else f"{cr['mean']:.3f}"
+            cr_cv = "—" if cr["cv"] is None else f"{cr['cv']:.3f}"
+            vb_mean = "—" if vb["mean"] is None else f"{vb['mean']:+.1%}"
+            print(f"{name:<20}{r['closed_rate']:>7.0%}{cr_mean:>10}{cr_cv:>12}{vb_mean:>10}")
+        print()
+
+    print("capture 均 = 已實現(+未實現mark-to-market)均價 ／ 該路徑期間最高收盤，越接近 1 越好")
+    print("capture CV = 標準差／平均，越小代表這個策略在不同劇本下結果越穩定（本次排序依據）")
+    print("vs持有均 = 跟「全程只抱著不賣」比較的平均超額報酬\n")
+
+    if len(scenario_names) > 1:
+        unique_winners = set(winners.values())
+        if len(unique_winners) == 1:
+            print(f"三種情境下排名第一（CV 最低）的都是「{unique_winners.pop()}」——結論不太受你對後市方向的看法影響。")
+        else:
+            print("不同情境下排名第一的策略不一樣：")
+            for sc_name, w in winners.items():
+                print(f"　{sc_name} → {w}")
+            print("代表這個結論對「你相信未來會怎麼走」很敏感，選哪個策略要看你自己對後市的判斷。")
+    return 0
+
+
 def cmd_test_notify(args) -> int:
     st = Settings()
     plan = Plan.load(args.plan)
@@ -283,6 +420,25 @@ def build_parser() -> argparse.ArgumentParser:
     uf.add_argument("tranche_id")
     uf.add_argument("--reason", required=True, help="為什麼要撤（會寫進 state.json 的稽核紀錄）")
     uf.set_defaults(func=cmd_unfill)
+
+    cd = sub.add_parser("chart-data", help="產生 docs/index.html 用的圖表資料 JSON")
+    cd.add_argument("--date", help="指定交易日（YYYY-MM-DD），預設今天")
+    cd.add_argument("--offline", action="store_true", help="不連網，只用本地資料")
+    cd.add_argument("--out", default="docs/chart-data.json", help="輸出路徑")
+    cd.add_argument("--lookback", type=int, default=60, help="要輸出近幾個交易日")
+    cd.set_defaults(func=cmd_chart_data)
+
+    bt = sub.add_parser("backtest", help="用合成路徑比較候選策略的穩健度")
+    bt.add_argument("--date", help="指定交易日（YYYY-MM-DD），預設今天")
+    bt.add_argument("--offline", action="store_true", help="不連網，只用本地資料")
+    bt.add_argument("--strategies", nargs="+", help=f"要比較哪幾個策略，預設全部（可用：{', '.join(STRATEGIES)}）")
+    bt.add_argument("--scenarios", nargs="+",
+                    help=f"要跑哪幾種方向假設，預設全部（可用：{', '.join(SCENARIOS)}）")
+    bt.add_argument("--paths", type=int, default=200, help="合成路徑數量")
+    bt.add_argument("--length", type=int, default=180, help="每條路徑幾個交易日")
+    bt.add_argument("--block-size", type=int, default=10, help="bootstrap 區塊長度（交易日）")
+    bt.add_argument("--seed", type=int, default=42, help="隨機種子，固定的話結果可重現")
+    bt.set_defaults(func=cmd_backtest)
 
     t = sub.add_parser("test-notify", help="送一則測試推播")
     t.add_argument("--dry-run", action="store_true")

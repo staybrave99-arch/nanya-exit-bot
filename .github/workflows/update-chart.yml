@@ -1,0 +1,40 @@
+name: Update chart data
+
+# 每個台股交易日收盤後（排程器 20:00 台北時間跑完之後）重算圖表資料，
+# push 上 main 就會讓 GitHub Pages（從 main:/docs 部署）自動重新發布。
+# 跟 state.json／實際持倉無關，純粹是市場資料 + 指標的靜態快照。
+on:
+  schedule:
+    - cron: "0 13 * * 1-5"   # 21:00 Asia/Taipei，週一~五
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 產生圖表資料
+        run: python -m nanya_exit chart-data --out docs/chart-data.json
+
+      - name: 若有變動就 commit + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/chart-data.json
+          if git diff --staged --quiet; then
+            echo "沒有變動，略過 commit。"
+          else
+            git commit -m "chore: update chart data"
+            git push
+          fi
