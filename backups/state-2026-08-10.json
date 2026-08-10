@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "plan": {
+    "symbol": "2408",
+    "name": "南亞科",
+    "total_lots": 60,
+    "start_date": "2026-08-05",
+    "start_close": 445.0,
+    "ladder": [
+      {
+        "id": "R1",
+        "price": 470.0,
+        "lots": 6,
+        "note": "8/5 高點 470.5"
+      },
+      {
+        "id": "R2",
+        "price": 495.0,
+        "lots": 6,
+        "note": "7/15 波段高 489.5"
+      },
+      {
+        "id": "R3",
+        "price": 520.0,
+        "lots": 6,
+        "note": "站上歷史高 505"
+      },
+      {
+        "id": "R4",
+        "price": 550.0,
+        "lots": 6,
+        "note": "券商目標價下緣"
+      },
+      {
+        "id": "R5",
+        "price": 585.0,
+        "lots": 6,
+        "note": "券商目標價中段"
+      }
+    ],
+    "bias_steps": [
+      {
+        "id": "B25",
+        "threshold": 0.25,
+        "lots": 6
+      },
+      {
+        "id": "B32",
+        "threshold": 0.32,
+        "lots": 6
+      }
+    ],
+    "chandelier_lookback": 20,
+    "atr_period": 14,
+    "fast_k": 2.0,
+    "fast_lots": 9,
+    "slow_k": 3.0,
+    "hard_floor": 322.0,
+    "ma_fast": 20,
+    "ma_slow": 60,
+    "weekly_ma": 8,
+    "weekly_breach_weeks": 2,
+    "stop_executes_next_open": true
+  },
+  "total_lots": 60,
+  "remaining_lots": 48,
+  "tranches": [
+    {
+      "id": "R1",
+      "engine": "ladder",
+      "lots": 6,
+      "trigger": {
+        "type": "limit_high",
+        "price": 470.0
+      },
+      "status": "filled",
+      "fill_price": 470.0,
+      "fill_date": "2026-08-10",
+      "note": "8/5 高點 470.5"
+    },
+    {
+      "id": "R2",
+      "engine": "ladder",
+      "lots": 6,
+      "trigger": {
+        "type": "limit_high",
+        "price": 495.0
+      },
+      "status": "filled",
+      "fill_price": 495.0,
+      "fill_date": "2026-08-10",
+      "note": "7/15 波段高 489.5"
+    },
+    {
+      "id": "R3",
+      "engine": "ladder",
+      "lots": 6,
+      "trigger": {
+        "type": "limit_high",
+        "price": 520.0
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "站上歷史高 505"
+    },
+    {
+      "id": "R4",
+      "engine": "ladder",
+      "lots": 6,
+      "trigger": {
+        "type": "limit_high",
+        "price": 550.0
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "券商目標價下緣"
+    },
+    {
+      "id": "R5",
+      "engine": "ladder",
+      "lots": 6,
+      "trigger": {
+        "type": "limit_high",
+        "price": 585.0
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "券商目標價中段"
+    },
+    {
+      "id": "B25",
+      "engine": "bias",
+      "lots": 6,
+      "trigger": {
+        "type": "bias_gte",
+        "threshold": 0.25
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "收盤/MA20-1 ≥ +25%"
+    },
+    {
+      "id": "B32",
+      "engine": "bias",
+      "lots": 6,
+      "trigger": {
+        "type": "bias_gte",
+        "threshold": 0.32
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "收盤/MA20-1 ≥ +32%"
+    },
+    {
+      "id": "FAST",
+      "engine": "chandelier_fast",
+      "lots": 9,
+      "trigger": {
+        "type": "close_below_stop",
+        "k": 2.0
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "收盤跌破 H20−2.0×ATR"
+    },
+    {
+      "id": "SLOW",
+      "engine": "chandelier_slow",
+      "lots": null,
+      "trigger": {
+        "type": "close_below_stop",
+        "k": 3.0
+      },
+      "status": "pending",
+      "fill_price": null,
+      "fill_date": null,
+      "note": "剩餘全部出清"
+    }
+  ],
+  "fills": [
+    {
+      "tranche_id": "R1",
+      "engine": "ladder",
+      "lots": 6,
+      "price": 470.0,
+      "date": "2026-08-10",
+      "reason": "最高價 502.0 觸及階梯 470"
+    },
+    {
+      "tranche_id": "R2",
+      "engine": "ladder",
+      "lots": 6,
+      "price": 495.0,
+      "date": "2026-08-10",
+      "reason": "最高價 502.0 觸及階梯 495"
+    }
+  ],
+  "pending_next_session": [],
+  "last_processed_date": "2026-08-10",
+  "last_notified_date": "2026-08-10",
+  "closed": false,
+  "closed_reason": null,
+  "runs": [
+    {
+      "ran_at": "2026-08-06T20:00:07+08:00",
+      "bar_date": "2026-08-06",
+      "close": 459.0,
+      "fills": [],
+      "queued": [],
+      "remaining": 60,
+      "notified": true,
+      "notify_error": null
+    },
+    {
+      "ran_at": "2026-08-06T23:43:15+08:00",
+      "bar_date": "2026-08-06",
+      "close": 459.0,
+      "fills": [],
+      "queued": [],
+      "remaining": 60,
+      "notified": false,
+      "notify_error": null
+    },
+    {
+      "ran_at": "2026-08-06T23:44:46+08:00",
+      "bar_date": "2026-08-06",
+      "close": 459.0,
+      "fills": [],
+      "queued": [],
+      "remaining": 60,
+      "notified": true,
+      "notify_error": null
+    },
+    {
+      "ran_at": "2026-08-07T00:05:49+08:00",
+      "bar_date": "2026-08-06",
+      "close": 459.0,
+      "fills": [],
+      "queued": [],
+      "remaining": 60,
+      "notified": true,
+      "notify_error": null
+    },
+    {
+      "ran_at": "2026-08-07T20:00:05+08:00",
+      "bar_date": "2026-08-07",
+      "close": 457.0,
+      "fills": [],
+      "queued": [],
+      "remaining": 60,
+      "notified": true,
+      "notify_error": null
+    },
+    {
+      "ran_at": "2026-08-10T20:00:10+08:00",
+      "bar_date": "2026-08-10",
+      "close": 502.0,
+      "fills": [
+        "R1",
+        "R2"
+      ],
+      "queued": [],
+      "remaining": 48,
+      "notified": true,
+      "notify_error": null
+    }
+  ],
+  "corrections": []
+}

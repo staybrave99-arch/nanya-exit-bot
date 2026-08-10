@@ -1,5 +1,9 @@
 # 南亞科 2408 分批出場機器人
 
+> **目前沒有實際部署**：Fly.io 排程器、GitHub Actions 圖表自動更新、
+> GitHub Pages 都已經下線，程式碼保留在這個 repo 供之後需要時重新部署。
+> 移除前的最後持倉狀態備份在 [backups/](backups/)。
+
 每個交易日 20:00（台北）自動抓證交所收盤資料、重算指標、判斷該建議賣哪一批，
 把「賣出建議」推到 ntfy。訊息一律用建議語氣、張數用佔總部位的百分比——這支
 程式沒有真的連券商，不代表已經真的成交。**內部仍是有狀態**：賣到第幾批、
@@ -104,6 +108,9 @@ pytest -q          # 56 個測試
 
 ## 部署到 Fly.io
 
+> **目前未部署**（app、machine、volume 都已移除）。下面是重新部署要跑的步驟；
+> `fly.toml`／`Dockerfile`／`scheduler.py` 都還在，程式碼不用改。
+
 ```bash
 fly launch --no-deploy                       # 會問 app 名稱，改掉 fly.toml 的 app
 fly volumes create nanya_data --size 1 --region nrt
@@ -134,14 +141,15 @@ fly ssh sftp get /data/state.json ./state.json
 
 ---
 
-## 圖表（GitHub Pages）
+## 圖表（GitHub Pages，目前未發布）
 
-`docs/index.html` 是一頁式的收盤價 + 出場價位圖，發布在 GitHub Pages。資料來自
-`docs/chart-data.json`，由 `.github/workflows/update-chart.yml` 每個交易日
-19:00（台北，早於排程器的 20:00 巡檢）自動重新產生並 commit——刻意排在推播
-之前，這樣通知裡附的圖表連結一點開就是當天資料，不用等推播之後再更新一次。
-push 到 `main` 就會讓 Pages（從 `main:/docs` 部署）自動重新發布，不需要另外
-接部署流程。
+`docs/index.html` 是一頁式的收盤價 + 出場價位圖，資料來自 `docs/chart-data.json`
+（現在是移除部署前最後一次產生的靜態快照，不會再自動更新）。之前的自動化是
+用 `.github/workflows/update-chart.yml` 每個交易日 19:00（台北，早於排程器的
+20:00 巡檢——這樣通知裡附的圖表連結一點開就是當天資料）重新產生並 commit，
+push 到 `main` 讓 Pages（從 `main:/docs` 部署）自動重新發布；這個 workflow
+已經移除，Pages 也關掉了。要重新啟用的話：把 `chart-data` 這段排程邏輯的
+workflow 加回來，並在 repo 設定裡把 GitHub Pages 重新指到 `main:/docs`。
 
 `chart-data.json` 只讀市場資料算指標，跟 `state.json`／實際持倉無關；本地要
 手動更新一次可以直接跑：
